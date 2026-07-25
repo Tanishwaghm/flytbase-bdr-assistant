@@ -1,0 +1,68 @@
+```mermaid
+graph TB
+    subgraph Client["Client - Vercel"]
+        UI[Next.js Dashboard<br/>TypeScript + Tailwind]
+    end
+
+    subgraph Server["Server - Render"]
+        API[FastAPI<br/>main.py]
+        RL[Rate Limiter]
+        Cache[TTL Cache]
+        ORC[Orchestrator]
+
+        subgraph Agents["8 Modular AI Agents"]
+            A1[Email Parser]
+            A2[Lead Qualification]
+            A3[Company Research]
+            A4[Buying Signal]
+            A5[Case Study Matching]
+            A6[GTM Recommendation]
+            A7[Outreach]
+            A8[AE Handoff]
+        end
+
+        LLMSVC[LLM Service<br/>retry / cache / rate-limit]
+        DATA[(case_studies.py<br/>static library)]
+    end
+
+    subgraph External["External Services"]
+        LLM{{OpenAI or Gemini}}
+        TAVILY{{Tavily Search API}}
+    end
+
+    UI -->|HTTPS REST /api/*| API
+    API --> RL
+    RL --> ORC
+    ORC --> A1 --> A2 --> A4
+    ORC --> A3 --> A4
+    A3 --> A5
+    A5 --> DATA
+    A2 --> A6
+    A3 --> A6
+    A4 --> A6
+    A5 --> A7
+    A2 --> A7
+    A3 --> A7
+    A5 --> A8
+    A6 --> A8
+    A2 --> A8
+    A3 --> A8
+    A4 --> A8
+
+    A1 --> LLMSVC
+    A2 --> LLMSVC
+    A3 --> LLMSVC
+    A4 --> LLMSVC
+    A5 --> LLMSVC
+    A6 --> LLMSVC
+    A7 --> LLMSVC
+    A8 --> LLMSVC
+
+    LLMSVC --> Cache
+    LLMSVC --> LLM
+    A3 --> TAVILY
+
+    style Client fill:#eef6ff,stroke:#2f7dff
+    style Server fill:#f8fafc,stroke:#64748b
+    style External fill:#fff7ed,stroke:#f59e0b
+```

@@ -1,0 +1,67 @@
+```mermaid
+sequenceDiagram
+    participant U as User (Browser)
+    participant FE as Next.js Frontend
+    participant API as FastAPI /api/analyze-email
+    participant ORC as Orchestrator
+    participant P as EmailParserAgent
+    participant Q as LeadQualificationAgent
+    participant R as CompanyResearchAgent
+    participant S as BuyingSignalAgent
+    participant CS as CaseStudyMatchingAgent
+    participant G as GTMRecommendationAgent
+    participant O as OutreachAgent
+    participant H as AEHandoffAgent
+    participant LLM as LLM Provider (OpenAI/Gemini)
+    participant WEB as Tavily Search API
+
+    U->>FE: Paste email, click "Analyze"
+    FE->>API: POST /api/analyze-email {email_text}
+    API->>ORC: run_full_pipeline(email_text)
+
+    ORC->>P: run(email_text)
+    P->>LLM: system_prompt + email_text
+    LLM-->>P: ParsedEmail JSON
+    P-->>ORC: ParsedEmail
+
+    ORC->>Q: run(parsed_email)
+    Q->>LLM: MEDDPICC prompt
+    LLM-->>Q: QualificationResult JSON
+    Q-->>ORC: QualificationResult
+
+    ORC->>R: run(parsed_email)
+    R->>WEB: research_company(name, industry)
+    WEB-->>R: search snippets
+    R->>LLM: synthesis prompt + snippets
+    LLM-->>R: CompanyResearch JSON
+    R-->>ORC: CompanyResearch
+
+    ORC->>S: run(parsed_email, research)
+    S->>LLM: signal-detection prompt
+    LLM-->>S: BuyingSignalResult JSON
+    S-->>ORC: BuyingSignalResult
+
+    ORC->>CS: run(parsed_email, research)
+    CS->>LLM: match against case_studies.py library
+    LLM-->>CS: CaseStudyResult JSON
+    CS-->>ORC: CaseStudyResult
+
+    ORC->>G: run(parsed_email, research, qualification, signals)
+    G->>LLM: GTM routing prompt
+    LLM-->>G: GTMRecommendation JSON
+    G-->>ORC: GTMRecommendation
+
+    ORC->>O: run(parsed_email, research, qualification, case_study)
+    O->>LLM: outreach generation prompt
+    LLM-->>O: OutreachPackage JSON
+    O-->>ORC: OutreachPackage
+
+    ORC->>H: run(all upstream results)
+    H->>LLM: CRM handoff synthesis prompt
+    LLM-->>H: AEHandoffSummary JSON
+    H-->>ORC: AEHandoffSummary
+
+    ORC-->>API: FullAnalysisResult
+    API-->>FE: 200 OK, FullAnalysisResult JSON
+    FE-->>U: Renders 7 dashboard cards
+```

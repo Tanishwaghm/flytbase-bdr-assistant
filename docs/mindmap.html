@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FlytBase Inbound BDR Assistant — Architecture Mind Map</title>
+<style>
+  :root {
+    --bg: #0b1120;
+    --bg-2: #0f172a;
+    --panel: #111827;
+    --border: #1f2937;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --accent: #2f7dff;
+    --accent-2: #10b981;
+    --accent-3: #f59e0b;
+    --accent-4: #f43f5e;
+    --node: #1e293b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: radial-gradient(circle at 20% 10%, var(--bg-2), var(--bg) 60%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    overflow: hidden;
+  }
+  #toolbar {
+    position: fixed; top: 16px; left: 16px; right: 16px; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    pointer-events: none;
+  }
+  #toolbar > * { pointer-events: auto; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .logo {
+    width: 34px; height: 34px; border-radius: 10px; background: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; color: white;
+  }
+  .brand h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .brand p { font-size: 11px; margin: 0; color: var(--muted); }
+
+  #search-wrap { position: relative; }
+  #search {
+    width: 260px; padding: 9px 14px 9px 34px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 13px; outline: none;
+  }
+  #search:focus { border-color: var(--accent); }
+  #search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; }
+
+  #controls {
+    position: fixed; bottom: 16px; right: 16px; z-index: 10;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .ctrl-btn {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: background .15s;
+  }
+  .ctrl-btn:hover { background: #1e293b; }
+
+  #legend {
+    position: fixed; bottom: 16px; left: 16px; z-index: 10;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 14px; font-size: 11px; color: var(--muted); max-width: 260px;
+  }
+  #legend b { color: var(--text); display: block; margin-bottom: 4px; font-size: 12px; }
+
+  #canvas-wrap { width: 100%; height: 100%; cursor: grab; }
+  #canvas-wrap.dragging { cursor: grabbing; }
+  svg { width: 100%; height: 100%; display: block; }
+
+  .link { fill: none; stroke: #334155; stroke-width: 1.5; }
+  .node-circle { stroke-width: 2; cursor: pointer; transition: r .15s, filter .15s; }
+  .node-circle:hover { filter: brightness(1.3); }
+  .node-label {
+    font-size: 12px; fill: var(--text); pointer-events: none; font-weight: 500;
+    text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  }
+  .node-label.root { font-size: 15px; font-weight: 700; }
+  .dimmed { opacity: 0.15; }
+  .highlight circle { stroke: #fde047 !important; stroke-width: 3.5 !important; }
+  .highlight text { fill: #fde047 !important; }
+
+  #hint {
+    position: fixed; top: 70px; left: 16px; z-index: 10; font-size: 11px; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <div class="brand">
+    <div class="logo">FB</div>
+    <div>
+      <h1>Inbound BDR Assistant</h1>
+      <p>Interactive architecture mind map</p>
+    </div>
+  </div>
+  <div id="search-wrap">
+    <span id="search-icon">&#128269;</span>
+    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off" />
+  </div>
+</div>
+
+<div id="hint">Scroll or pinch to zoom · Drag to pan · Click a node to focus</div>
+
+<div id="canvas-wrap">
+  <svg id="svg" viewBox="0 0 2000 1400">
+    <g id="viewport"></g>
+  </svg>
+</div>
+
+<div id="controls">
+  <button class="ctrl-btn" id="zoom-in" title="Zoom in">+</button>
+  <button class="ctrl-btn" id="zoom-out" title="Zoom out">&minus;</button>
+  <button class="ctrl-btn" id="reset" title="Reset view">&#8634;</button>
+</div>
+
+<div id="legend">
+  <b>Legend</b>
+  Root → Layer (Frontend / Backend / Agents / Deployment) → Detail nodes.
+  Node color reflects category. Use search to jump to any node by name.
+</div>
+
+<script>
+(function () {
+  // ---------------------------------------------------------------------
+  // Data: tree structure describing the system (mirrors docs/diagrams/mindmap.mmd)
+  // ---------------------------------------------------------------------
+  const COLORS = { root: "#2f7dff", frontend: "#59a3ff", backend: "#10b981", agents: "#f59e0b", deploy: "#f43f5e" };
+
+  const data = {
+    name: "FlytBase Inbound\nBDR Assistant",
+    color: COLORS.root,
+    children: [
+      {
+        name: "Frontend", color: COLORS.frontend,
+        children: [
+          { name: "Next.js + TypeScript", color: COLORS.frontend },
+          { name: "TailwindCSS + Dark Mode", color: COLORS.frontend },
+          { name: "Dashboard Cards", color: COLORS.frontend, children: [
+            { name: "Qualification", color: COLORS.frontend },
+            { name: "Research", color: COLORS.frontend },
+            { name: "Buying Signals", color: COLORS.frontend },
+            { name: "Case Study", color: COLORS.frontend },
+            { name: "GTM", color: COLORS.frontend },
+            { name: "Outreach", color: COLORS.frontend },
+            { name: "AE Handoff", color: COLORS.frontend },
+          ]},
+          { name: "Bonus UX", color: COLORS.frontend, children: [
+            { name: "Copy / Export buttons", color: COLORS.frontend },
+            { name: "Lead Score Gauge", color: COLORS.frontend },
+            { name: "Skeleton Loaders", color: COLORS.frontend },
+            { name: "Sample Emails", color: COLORS.frontend },
+            { name: "Search History", color: COLORS.frontend },
+            { name: "Toast Notifications", color: COLORS.frontend },
+          ]},
+        ],
+      },
+      {
+        name: "Backend", color: COLORS.backend,
+        children: [
+          { name: "FastAPI + Python", color: COLORS.backend },
+          { name: "REST APIs", color: COLORS.backend, children: [
+            { name: "/analyze-email", color: COLORS.backend },
+            { name: "/qualify", color: COLORS.backend },
+            { name: "/research", color: COLORS.backend },
+            { name: "/case-study", color: COLORS.backend },
+            { name: "/recommend", color: COLORS.backend },
+            { name: "/generate-email", color: COLORS.backend },
+            { name: "/handoff", color: COLORS.backend },
+          ]},
+          { name: "Reliability", color: COLORS.backend, children: [
+            { name: "Retry with backoff", color: COLORS.backend },
+            { name: "TTL cache", color: COLORS.backend },
+            { name: "Rate limiter", color: COLORS.backend },
+            { name: "Structured logging", color: COLORS.backend },
+          ]},
+        ],
+      },
+      {
+        name: "AI Agents", color: COLORS.agents,
+        children: [
+          { name: "1. Email Parser", color: COLORS.agents },
+          { name: "2. Lead Qualification\n(MEDDPICC)", color: COLORS.agents },
+          { name: "3. Company Research", color: COLORS.agents, children: [
+            { name: "Live web search (Tavily)", color: COLORS.agents },
+          ]},
+          { name: "4. Buying Signal Detection", color: COLORS.agents },
+          { name: "5. Case Study Matching", color: COLORS.agents, children: [
+            { name: "Retrieval-augmented", color: COLORS.agents },
+          ]},
+          { name: "6. GTM Recommendation", color: COLORS.agents, children: [
+            { name: "Direct AE", color: COLORS.agents },
+            { name: "Partner-led", color: COLORS.agents },
+            { name: "Enterprise Team", color: COLORS.agents },
+            { name: "Channel Partner", color: COLORS.agents },
+          ]},
+          { name: "7. Outreach Generation", color: COLORS.agents, children: [
+            { name: "Email", color: COLORS.agents },
+            { name: "LinkedIn", color: COLORS.agents },
+            { name: "Call opening", color: COLORS.agents },
+            { name: "Discovery questions", color: COLORS.agents },
+            { name: "Follow-ups", color: COLORS.agents },
+          ]},
+          { name: "8. AE Handoff Summary", color: COLORS.agents },
+        ],
+      },
+      {
+        name: "Deployment", color: COLORS.deploy,
+        children: [
+          { name: "Frontend on Vercel", color: COLORS.deploy },
+          { name: "Backend on Render", color: COLORS.deploy },
+          { name: "Env-driven config", color: COLORS.deploy },
+        ],
+      },
+    ],
+  };
+
+  // ---------------------------------------------------------------------
+  // Radial layout (no external libs)
+  // ---------------------------------------------------------------------
+  const svg = document.getElementById("svg");
+  const viewport = document.getElementById("viewport");
+  const CX = 1000, CY = 700;
+
+  let idCounter = 0;
+  function layout(node, depth, angleStart, angleEnd, parent) {
+    node.id = idCounter++;
+    node.depth = depth;
+    node.parent = parent;
+    const angle = (angleStart + angleEnd) / 2;
+    const radius = depth === 0 ? 0 : 130 + depth * 230;
+    node.x = CX + radius * Math.cos(angle);
+    node.y = CY + radius * Math.sin(angle);
+
+    const kids = node.children || [];
+    if (kids.length) {
+      const span = angleEnd - angleStart;
+      let a = angleStart;
+      const step = span / kids.length;
+      kids.forEach((child) => {
+        layout(child, depth + 1, a, a + step, node);
+        a += step;
+      });
+    }
+  }
+  layout(data, 0, 0, Math.PI * 2, null);
+
+  const allNodes = [];
+  (function collect(n) { allNodes.push(n); (n.children || []).forEach(collect); })(data);
+
+  // ---------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // links first (so nodes draw on top)
+  allNodes.forEach((n) => {
+    if (!n.parent) return;
+    const path = el("path", {
+      class: "link",
+      d: `M ${n.parent.x} ${n.parent.y} C ${(n.parent.x + n.x) / 2} ${n.parent.y}, ${(n.parent.x + n.x) / 2} ${n.y}, ${n.x} ${n.y}`,
+    });
+    viewport.appendChild(path);
+  });
+
+  allNodes.forEach((n) => {
+    const g = el("g", { class: "node", "data-id": n.id, transform: `translate(${n.x},${n.y})` });
+    const r = n.depth === 0 ? 46 : n.depth === 1 ? 30 : n.depth === 2 ? 20 : 14;
+    const circle = el("circle", { class: "node-circle", r, fill: n.color || "#1e293b", stroke: "#0b1120" });
+    g.appendChild(circle);
+
+    const lines = n.name.split("\n");
+    const label = el("text", {
+      class: "node-label" + (n.depth === 0 ? " root" : ""),
+      x: n.depth === 0 ? 0 : r + 8,
+      y: n.depth === 0 ? r + 20 : 4,
+      "text-anchor": n.depth === 0 ? "middle" : "start",
+    });
+    lines.forEach((line, i) => {
+      const tspan = el("tspan", { x: label.getAttribute("x"), dy: i === 0 ? 0 : 14 });
+      tspan.textContent = line;
+      label.appendChild(tspan);
+    });
+    g.appendChild(label);
+
+    g.addEventListener("click", () => focusNode(n));
+    viewport.appendChild(g);
+    n.el = g;
+  });
+
+  // ---------------------------------------------------------------------
+  // Pan & zoom
+  // ---------------------------------------------------------------------
+  let scale = 0.62, tx = 0, ty = 0;
+  let isDragging = false, lastX = 0, lastY = 0;
+  const wrap = document.getElementById("canvas-wrap");
+
+  function applyTransform() {
+    viewport.setAttribute("transform", `translate(${tx},${ty}) scale(${scale})`);
+  }
+  function centerView() {
+    tx = -CX * scale + window.innerWidth / 2;
+    ty = -CY * scale + window.innerHeight / 2;
+    applyTransform();
+  }
+  centerView();
+
+  wrap.addEventListener("mousedown", (e) => {
+    isDragging = true; lastX = e.clientX; lastY = e.clientY;
+    wrap.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    tx += e.clientX - lastX; ty += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    applyTransform();
+  });
+  window.addEventListener("mouseup", () => { isDragging = false; wrap.classList.remove("dragging"); });
+
+  wrap.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 1.1 : 0.9;
+    zoomAt(e.clientX, e.clientY, delta);
+  }, { passive: false });
+
+  function zoomAt(clientX, clientY, factor) {
+    const newScale = Math.min(2.5, Math.max(0.15, scale * factor));
+    const ratio = newScale / scale;
+    tx = clientX - (clientX - tx) * ratio;
+    ty = clientY - (clientY - ty) * ratio;
+    scale = newScale;
+    applyTransform();
+  }
+
+  document.getElementById("zoom-in").onclick = () => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.2);
+  document.getElementById("zoom-out").onclick = () => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 0.8);
+  document.getElementById("reset").onclick = () => { scale = 0.62; centerView(); clearSearch(); };
+
+  // touch support (basic pinch + pan)
+  let touchState = null;
+  wrap.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) {
+      touchState = { mode: "pan", x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      const [a, b] = e.touches;
+      touchState = { mode: "pinch", dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
+    }
+  }, { passive: true });
+  wrap.addEventListener("touchmove", (e) => {
+    if (!touchState) return;
+    if (touchState.mode === "pan" && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - touchState.x, dy = e.touches[0].clientY - touchState.y;
+      tx += dx; ty += dy;
+      touchState.x = e.touches[0].clientX; touchState.y = e.touches[0].clientY;
+      applyTransform();
+    } else if (touchState.mode === "pinch" && e.touches.length === 2) {
+      const [a, b] = e.touches;
+      const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const factor = dist / touchState.dist;
+      const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+      zoomAt(cx, cy, factor);
+      touchState.dist = dist;
+    }
+  }, { passive: true });
+  wrap.addEventListener("touchend", () => { touchState = null; });
+
+  // ---------------------------------------------------------------------
+  // Focus / search
+  // ---------------------------------------------------------------------
+  function focusNode(n) {
+    const targetScale = 1.1;
+    scale = targetScale;
+    tx = window.innerWidth / 2 - n.x * targetScale;
+    ty = window.innerHeight / 2 - n.y * targetScale;
+    applyTransform();
+  }
+
+  const searchInput = document.getElementById("search");
+  function clearSearch() {
+    allNodes.forEach((n) => n.el.classList.remove("dimmed", "highlight"));
+  }
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q) { clearSearch(); return; }
+    let firstMatch = null;
+    allNodes.forEach((n) => {
+      const match = n.name.toLowerCase().includes(q);
+      n.el.classList.toggle("dimmed", !match);
+      n.el.classList.toggle("highlight", match);
+      if (match && !firstMatch) firstMatch = n;
+    });
+    if (firstMatch) focusNode(firstMatch);
+  });
+
+  window.addEventListener("resize", () => applyTransform());
+})();
+</script>
+</body>
+</html>

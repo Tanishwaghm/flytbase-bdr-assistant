@@ -1,0 +1,31 @@
+```mermaid
+flowchart TD
+    A[Inbound Contact-Form Email] --> B[1. Email Parser Agent]
+    B -->|ParsedEmail JSON| C[2. Lead Qualification Agent]
+    B -->|ParsedEmail JSON| D[3. Company Research Agent]
+    D -->|CompanyResearch JSON| E[4. Buying Signal Agent]
+    C -->|QualificationResult JSON| E
+    D --> F[5. Case Study Matching Agent]
+    C --> G[6. GTM Recommendation Agent]
+    D --> G
+    E --> G
+    F --> H[7. Outreach Agent]
+    C --> H
+    D --> H
+    F --> I[8. AE Handoff Agent]
+    C --> I
+    D --> I
+    E --> I
+    G --> I
+    H --> J[Dashboard: Outreach Card]
+    I --> K[Dashboard: AE Handoff Card]
+    G --> L[Dashboard: GTM Card]
+    F --> M[Dashboard: Case Study Card]
+    E --> N[Dashboard: Buying Signals Card]
+    D --> O[Dashboard: Research Card]
+    C --> P[Dashboard: Qualification Card]
+
+    style A fill:#2f7dff,color:#fff
+    style J fill:#10b981,color:#fff
+    style K fill:#10b981,color:#fff
+```
